@@ -1,6 +1,6 @@
 // ===== 配置变量 =====
 const subConverter = 'SUBAPI.cmliussss.net'; // 订阅转换后端
-const subConfig = 'https://raw.githubusercontent.com/Jacobax/workers-pages/refs/heads/main/uni.ini'; // 订阅配置文件
+const subConfig = 'https://raw.githubusercontent.com/cmliu/ACL4SSR/main/Clash/config/ACL4SSR_Online_Full_MultiMode.ini'; // 订阅配置文件
 const FileName = 'CF-Workers-SUB'; // 下载文件名
 const SUBUpdateTime = 6; // 订阅更新间隔（小时）
 
@@ -47,13 +47,13 @@ function generatePath(useTrojan, pathIp, pathPort) {
   return encodeURIComponent(rawPath);
 }
 
-// ===== 辅助函数：选择FDIP（匹配name或随机） =====
+// ===== 辅助函数：选择FDIP（匹配name或随机，忽略大小写） =====
 function selectFdip(name, validFDIP) {
-  // 按 name 匹配 FDIP（优先匹配，多个取第一个；无匹配则随机）
+  // 按 name 匹配 FDIP（优先匹配，多个取第一个；无匹配则随机，忽略大小写）
   let selectedFdip = null;
   for (const fdip of validFDIP) {
     const [_, fdipName] = fdip.line.split('#');
-    if (name.includes(fdipName.trim())) {
+    if (name.toLowerCase().includes(fdipName.toLowerCase().trim())) {
       selectedFdip = fdip;
       break;
     }
