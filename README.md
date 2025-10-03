@@ -23,7 +23,7 @@
 
 - **IPS列表**：静态IP数组，如`['ip/domain:port#name']`，为空数组`[]`禁用。 
 
-- **FDIP列表**：反代IP数组，如`['ip/domain:port#标签']`，为空数组`[]`禁用（但IPS/DIFF启用时必填）。 
+- **FDIP列表**：反代IP数组，如`['ip/domain:port#标签']`，为空数组`[]`禁用（但IPS/DIFF启用时必填）。 默认填了几个[cm](https://t.me/CMLiussss)的反代
 
 - **模板**： 
   - `vlessTemplate`：VLESS URI模板。 
