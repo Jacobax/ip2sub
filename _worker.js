@@ -17,7 +17,7 @@ const apiDiff = ''; // 反代IP取自FDIP，记为DIFF API
 // IPS 列表（为空数组则禁用）
 const IPS = [
    'cf.qmqm.cf:443#官方',
-   'mfa.gov.ua:443官方',
+   'mfa.gov.ua:443#官方',
    'cm.cf.090227.xyz:443#官方',
    'download.yunzhongzhuan.com:443#官方',
    'www.shopify.com:443#官方'
