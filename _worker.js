@@ -1,6 +1,6 @@
 // ===== 配置变量 =====
 const subConverter = 'SUBAPI.cmliussss.net'; // 订阅转换后端
-const subConfig = 'https://raw.githubusercontent.com/Jacobax/workers-pages/refs/heads/main/uni.ini'; // 订阅配置文件
+const subConfig = 'https://raw.githubusercontent.com/cmliu/ACL4SSR/main/Clash/config/ACL4SSR_Online_Full_MultiMode.ini'; // 订阅配置文件
 const FileName = 'CF-Workers-SUB'; // 下载文件名
 const SUBUpdateTime = 6; // 订阅更新间隔（小时）
 
