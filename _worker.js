@@ -1,20 +1,14 @@
 // ===== 配置变量 =====
 const subConverter = 'SUBAPI.cmliussss.net'; // 订阅转换后端
-const subConfig = 'https://raw.githubusercontent.com/cmliu/ACL4SSR/main/Clash/config/ACL4SSR_Online_Full_MultiMode.ini'; // 订阅配置文件
+const subConfig = 'https://raw.githubusercontent.com/Jacobax/workers-pages/refs/heads/main/uni.ini'; // 订阅配置文件
 const FileName = 'CF-Workers-SUB'; // 下载文件名
 const SUBUpdateTime = 6; // 订阅更新间隔（小时）
 
-// 通用配置参数
+// 通用配置参数（默认值，可被查询参数覆盖）
 const UUID = '17f0bb43-bc90-458e-9752-5027839cd5e4'; // VLESS UUID
-const MIMA = 'mima'; // Trojan 密码
+const MIMA = 'whmn'; // Trojan 密码
 const hostV = ''; // VLESS host/sni 值
 const hostT = ''; // Trojan host/sni 值
-
-// VLESS 模板（使用 [path] 占位，host/sni 统一用 hostV）
-const vlessTemplate = `vless://${UUID}@[ip]:[port]?path=[path]&security=tls&alpn=h3&encryption=none&host=${hostV}&fp=random&type=ws&sni=${hostV}#[name]`;
-
-// Trojan 模板（使用 [path] 占位，host/sni 统一用 hostT）
-const trojanTemplate = `trojan://${MIMA}@[ip]:[port]?security=tls&sni=${hostT}&fp=chrome&type=ws&host=${hostT}&path=[path]#[name]`;
 
 // API 地址（为空字符串则禁用）
 const apiUni = ''; // 反代IP同优选IP，记为UNI API
@@ -48,7 +42,7 @@ function parseLine(line) {
 
 // ===== 辅助函数：生成path =====
 function generatePath(useTrojan, pathIp, pathPort) {
-  const prefix = useTrojan ? '/proxyip=' : '/snippets/ip=';	//分别为trojan、vless的path路径前缀，path=[前缀][ip:port]
+  const prefix = useTrojan ? '/proxyip=' : '/snippets/ip=';
   const rawPath = `${prefix}${pathIp}:${pathPort}`;
   return encodeURIComponent(rawPath);
 }
@@ -110,7 +104,17 @@ export default {
 
       // 根据查询参数决定使用哪种模板（?trojan=1 时使用 trojan）
       const useTrojan = reqUrl.searchParams.get('trojan') === '1';
-      const template = useTrojan ? trojanTemplate : vlessTemplate;
+
+      // 获取动态覆盖参数（?uuid=xxx&mima=yyy&hostV=xxx&hostT=yyy）
+      const dynamicUUID = reqUrl.searchParams.get('uuid') || UUID;
+      const dynamicMima = reqUrl.searchParams.get('mima') || MIMA;
+      const dynamicHostV = reqUrl.searchParams.get('hostV') || hostV;
+      const dynamicHostT = reqUrl.searchParams.get('hostT') || hostT;
+
+      // 动态构建模板
+      const vlessTemplateDynamic = `vless://${dynamicUUID}@[ip]:[port]?path=[path]&security=tls&alpn=h3&encryption=none&host=${dynamicHostV}&fp=random&type=ws&sni=${dynamicHostV}#[name]`;
+      const trojanTemplateDynamic = `trojan://${dynamicMima}@[ip]:[port]?security=tls&sni=${dynamicHostT}&fp=chrome&type=ws&host=${dynamicHostT}&path=[path]#[name]`;
+      const template = useTrojan ? trojanTemplateDynamic : vlessTemplateDynamic;
 
       // 获取强制FDIP参数（?fdip=ip:port）
       const forcedFdip = reqUrl.searchParams.get('fdip');
