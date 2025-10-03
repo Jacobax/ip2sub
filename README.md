@@ -8,8 +8,8 @@
 
 - **多来源支持**：集成UNI API（优选IP）、DIFF API（匹配FDIP）、静态IPS列表，可配置为空。 
 - **FDIP反代**：IPS和DIFF API节点可匹配/随机使用FDIP（SG/JP/FI），支持域名/IP。 
-- **通用Path生成**：统一path格式（如`/snippets/ip=domain:port`），兼容VLESS/Trojan，易扩展。 
-- **查询参数灵活**：支持`?trojan=1`切换模板、`?fdip=ip:port`强制统一path。 
+- **通用Path生成**：统一path格式（如`/snippets/ip=ip/domain:port`），兼容VLESS/Trojan，易扩展。 
+- **查询参数灵活**：支持`?trojan=1`切换模板、`?fdip=ip:port`强制统一path、`?uuid=xxx`等动态覆盖核心参数。 
 - **订阅转换**：集成subconverter，支持base64/Clash/Surge等格式输出。 
 - **配置校验**：确保至少一个来源不为空，FDIP依赖时必填。 
 
@@ -21,9 +21,9 @@
   - `apiUni`：UNI API URL，设为空字符串禁用。 
   - `apiDiff`：DIFF API URL，设为空字符串禁用。 
 
-- **IPS列表**：静态IP数组，如`['domain:port#name']`，为空数组`[]`禁用。 
+- **IPS列表**：静态IP数组，如`['ip/domain:port#name']`，为空数组`[]`禁用。 
 
-- **FDIP列表**：反代IP数组，如`['domain:port#标签']`，为空数组`[]`禁用（但IPS/DIFF启用时必填）。 
+- **FDIP列表**：反代IP数组，如`['ip/domain:port#标签']`，为空数组`[]`禁用（但IPS/DIFF启用时必填）。 
 
 - **模板**： 
   - `vlessTemplate`：VLESS URI模板。 
@@ -36,13 +36,13 @@
 示例配置（简化）： 
 ```javascript 
 const IPS = [ 
-  'domain:port#name', 
-  'domain:port#name' 
+  'ip/domain:port#name', 
+  'ip/domain:port#name' 
 ]; 
 
 const FDIP = [ 
-  'domain:port#标签', 
-  'domain:port#标签' 
+  'ip/domain:port#标签', 
+  'ip/domain:port#标签' 
 ]; 
 ``` 
 
@@ -52,11 +52,15 @@ const FDIP = [
 
 2. **访问订阅**： 
    - 基础URL：`https://your-worker.workers.dev` 
-   - 示例：`https://your-worker.workers.dev?trojan=1&fdip=8.8.8.8:443` 
+   - 示例：`https://your-worker.workers.dev?trojan=1&fdip=8.8.8.8:443&uuid=new-uuid&hostV=custom-host.com` 
 
 3. **查询参数**： 
    - `?trojan=1`：使用Trojan模板（默认VLESS）。 
-   - `?fdip=ip:port` 或 `?fdip=domain:port`：强制所有节点path使用指定值。 
+   - `?fdip=ip:port` 或 `?fdip=ip/domain:port`：强制所有节点path使用指定值。 
+   - `?uuid=xxx`：覆盖VLESS UUID（默认从代码常量）。 
+   - `?mima=yyy`：覆盖Trojan密码（默认从代码常量）。 
+   - `?hostV=zzz`：覆盖VLESS host/sni值（默认从代码常量）。 
+   - `?hostT=www`：覆盖Trojan host/sni值（默认从代码常量）。 
    - `?clash` / `?surge` 等：触发对应格式转换。 
    - `?b64`：强制base64输出。 
 
