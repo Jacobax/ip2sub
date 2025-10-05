@@ -27,8 +27,8 @@ const IPS = [
 
 // FDIP 列表（为空数组则禁用，但需检查使用条件）
 const FDIP = [
-  'ProxyIP.SG.CMLiussss.net:443#SG',
-  'ProxyIP.JP.CMLiussss.net:443#JP'
+  'ProxyIP.JP.CMLiussss.net:443#JP',
+  'ProxyIP.SG.CMLiussss.net:443#SG'
 ];
 
 // KV FDIP 键名（用于从 KV 空间读取额外 FDIP 来源）
