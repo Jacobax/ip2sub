@@ -13,6 +13,7 @@
 - **订阅转换**：集成 SubConverter，支持 Clash、Surge、Loon、Quantumult X、Sing-box 等格式。
 - **动态参数**：支持查询参数覆盖 UUID、密码、Host 等。
 - **FDIP 扩展**：?fdip=ip:port (强制单一) 或 ?fdip=all (所有来源使用 FDIP)。
+- **Path 前缀管理**：支持动态覆盖 VLESS/Trojan path 前缀 (?vlessPrefix=xxx&trojanPrefix=yyy)。
 
 ## 配置
 
@@ -39,6 +40,10 @@ const hostV = 'YOUR_VLESS_HOST'; // e.g., 'host.example.com'
 const MIMA = 'YOUR_TROJAN_PASSWORD'; // e.g., 'your-password'
 const hostT = 'YOUR_TROJAN_HOST'; // e.g., 'trojan.example.com'
 
+// Path 前缀配置 (默认，可查询参数覆盖)
+const VLESS_PATH_PREFIX = '/snippets/ip='; // VLESS path 前缀
+const TROJAN_PATH_PREFIX = '/proxyip='; // Trojan path 前缀
+
 // API 地址 (空字符串禁用)
 const apiUni = 'YOUR_UNI_API_URL'; // UNI API (反代同优选)
 const apiDiff = 'YOUR_DIFF_API_URL'; // DIFF API (需 FDIP)
@@ -54,12 +59,12 @@ const FDIP = [
 ];
 
 // KV FDIP 键名 (用于动态 FDIP)
-const KV_FDIP_KEY = 'YOUR_KV_KEY'; // e.g., 'KV_FDIP_LIST'
+const FDIP_KEY = 'YOUR_KV_KEY'; // e.g., 'KV_FDIP_LIST'
 ```
 
 ### KV 配置
 - 在 Cloudflare Dashboard > Workers > Settings > Bindings > Add > KV Namespace，绑定变量名为 `KV`。
-- 在 KV 中写入键 `KV_FDIP_KEY` 的值（多行 ip:port#name 格式）。
+- 在 KV 中写入键 `FDIP_KEY` 的值（多行 ip:port#name 格式）。
 
 ## 使用方法
 
@@ -70,7 +75,7 @@ const KV_FDIP_KEY = 'YOUR_KV_KEY'; // e.g., 'KV_FDIP_LIST'
 
 2. **访问订阅**：
    - Base64 格式：`https://your-worker.workers.dev`
-   - 指定格式：添加查询参数，如 `?target=clash` (Clash) 或 `?surge` (Surge)。
+   - 指定格式：添加查询参数，如 `?clash` (Clash) 或 `?surge` (Surge)。
    - 示例：`https://your-worker.workers.dev?clash`
 
 3. **查询参数**：
@@ -79,6 +84,8 @@ const KV_FDIP_KEY = 'YOUR_KV_KEY'; // e.g., 'KV_FDIP_LIST'
    - `?mima=yyy`：覆盖 Trojan 密码。
    - `?hostV=zzz`：覆盖 VLESS Host/SNI。
    - `?hostT=www`：覆盖 Trojan Host/SNI。
+   - `?vlessPrefix=xxx`：覆盖 VLESS path 前缀 (e.g., '/custom/vless/ip=')。
+   - `?trojanPrefix=yyy`：覆盖 Trojan path 前缀 (e.g., '/custom/trojan/ip=')。
    - `?fdip=ip:port`：强制所有节点使用指定 FDIP。
    - `?fdip=all`：所有来源 (UNI/IPS/DIFF) 使用 FDIP 反代。
    - `?b64` 或 `?base64`：强制 Base64 输出。
