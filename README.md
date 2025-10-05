@@ -1,103 +1,118 @@
 # CF-Workers-SUB
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/your-username/cf-workers-sub) 
+一个基于 Cloudflare Workers 的订阅生成器，用于动态生成 VLESS 或 Trojan 节点订阅，支持多种 IP 来源和反代优化。适用于 Clash、Surge、Quantumult X 等客户端，支持 Base64 和多种配置文件格式。
 
-这是一个基于Cloudflare Workers的订阅生成器，用于动态拉取IP来源并生成VLESS/Trojan节点订阅。支持多种协议转换（如Clash、Surge等），并集成FDIP反代优化，提升节点可用性。 
+## 功能概述
 
-## 功能特点 
+- **节点来源**：
+  - UNI API：直接使用优选 IP 作为反代（默认）。
+  - IPS 列表：静态 IP 列表，使用 FDIP 优化反代。
+  - DIFF API：动态 API 节点，使用 FDIP 反代。
+- **FDIP 支持**：反代 IP 优化，支持常量列表 + KV 存储动态更新。按节点名称匹配（忽略大小写），多匹配随机选，无匹配全局随机。
+- **协议支持**：VLESS (默认) 或 Trojan (?trojan=1)。
+- **订阅转换**：集成 SubConverter，支持 Clash、Surge、Loon、Quantumult X、Sing-box 等格式。
+- **动态参数**：支持查询参数覆盖 UUID、密码、Host 等。
+- **FDIP 扩展**：?fdip=ip:port (强制单一) 或 ?fdip=all (所有来源使用 FDIP)。
 
-- **多来源支持**：集成UNI API（优选IP）、DIFF API（匹配FDIP）、静态IPS列表，可配置为空。 
-- **FDIP反代**：IPS和DIFF API节点可匹配/随机使用FDIP（SG/JP/FI），支持域名/IP。 
-- **通用Path生成**：统一path格式（如`/snippets/ip=ip/domain:port`），兼容VLESS/Trojan，易扩展。 
-- **查询参数灵活**：支持`?trojan=1`切换模板、`?fdip=ip:port`强制统一path、`?uuid=xxx`等动态覆盖核心参数。 
-- **订阅转换**：集成subconverter，支持base64/Clash/Surge等格式输出。 
-- **配置校验**：确保至少一个来源不为空，FDIP依赖时必填。 
+## 配置
 
-## 配置说明 
+在 Worker 代码中修改以下常量（建议使用环境变量覆盖）：
 
-在`_worker.js`中修改以下常量： 
+```javascript
+// 订阅转换后端
+const subConverter = 'YOUR_SUBCONVERTER_DOMAIN'; // e.g., 'SUBAPI.example.com'
 
-- **API地址**： 
-  - `apiUni`：UNI API URL，设为空字符串禁用。 
-  - `apiDiff`：DIFF API URL，设为空字符串禁用。 
+// 订阅配置文件
+const subConfig = 'YOUR_CONFIG_URL'; // e.g., 'https://raw.githubusercontent.com/user/repo/main/config.ini'
 
-- **IPS列表**：静态IP数组，如`['ip/domain:port#name']`，为空数组`[]`禁用。 
+// 下载文件名
+const FileName = 'CF-Workers-SUB'; // 可自定义
 
-- **FDIP列表**：反代IP数组，如`['ip/domain:port#标签']`，为空数组`[]`禁用（但IPS/DIFF启用时必填）。 默认填了几个[cm](https://t.me/CMLiussss)的反代
+// 更新间隔 (小时)
+const SUBUpdateTime = 6;
 
-- **模板**： 
-  - `vlessTemplate`：VLESS URI模板。 
-  - `trojanTemplate`：Trojan URI模板。 
+// VLESS 配置 (默认，可查询参数覆盖)
+const UUID = 'YOUR_VLESS_UUID'; // e.g., 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+const hostV = 'YOUR_VLESS_HOST'; // e.g., 'host.example.com'
 
-- **订阅转换**： 
-  - `subConverter`：后端URL。 
-  - `subConfig`：配置文件URL。 
+// Trojan 配置 (默认，可查询参数覆盖)
+const MIMA = 'YOUR_TROJAN_PASSWORD'; // e.g., 'your-password'
+const hostT = 'YOUR_TROJAN_HOST'; // e.g., 'trojan.example.com'
 
-示例配置（简化）： 
-```javascript 
-const IPS = [ 
-  'ip/domain:port#name', 
-  'ip/domain:port#name' 
-]; 
+// API 地址 (空字符串禁用)
+const apiUni = 'YOUR_UNI_API_URL'; // UNI API (反代同优选)
+const apiDiff = 'YOUR_DIFF_API_URL'; // DIFF API (需 FDIP)
 
-const FDIP = [ 
-  'ip/domain:port#标签', 
-  'ip/domain:port#标签' 
-]; 
-``` 
+// IPS 列表 (ip:port#name 格式，空数组禁用)
+const IPS = [
+  // 示例: 'example-ip.com:443#标签'
+];
 
-## 使用方法 
+// FDIP 列表 (ip:port#name 格式，空数组禁用)
+const FDIP = [
+  // 示例: 'fdip.example.com:443#SG'
+];
 
-1. **部署**：点击上方按钮一键部署到Cloudflare Workers，或手动上传`_worker.js`。 
+// KV FDIP 键名 (用于动态 FDIP)
+const KV_FDIP_KEY = 'YOUR_KV_KEY'; // e.g., 'KV_FDIP_LIST'
+```
 
-2. **访问订阅**： 
-   - 基础URL：`https://your-worker.workers.dev` 
-   - 示例：`https://your-worker.workers.dev?trojan=1&fdip=8.8.8.8:443&uuid=new-uuid&hostV=custom-host.com` 
+### KV 配置
+- 在 Cloudflare Dashboard > Workers > Settings > Bindings > Add > KV Namespace，绑定变量名为 `KV`。
+- 在 KV 中写入键 `KV_FDIP_KEY` 的值（多行 ip:port#name 格式）。
 
-3. **查询参数**： 
-   - `?trojan=1`：使用Trojan模板（默认VLESS）。 
-   - `?fdip=ip:port` 或 `?fdip=ip/domain:port`：强制所有节点path使用指定值。 
-   - `?uuid=xxx`：覆盖VLESS UUID（默认从代码常量）。 
-   - `?mima=yyy`：覆盖Trojan密码（默认从代码常量）。 
-   - `?hostV=zzz`：覆盖VLESS host/sni值（默认从代码常量）。 
-   - `?hostT=www`：覆盖Trojan host/sni值（默认从代码常量）。 
-   - `?clash` / `?surge` 等：触发对应格式转换。 
-   - `?b64`：强制base64输出。 
+## 使用方法
 
-4. **输出格式**： 
-   - 默认：Base64编码节点列表。 
-   - 客户端UA检测：自动适配Clash/Surge/Quantumult X等。 
+1. **部署 Worker**：
+   - 在 Cloudflare Dashboard 创建 Worker，粘贴代码。
+   - 配置 KV（可选）。
+   - 保存并部署。
 
-## 部署步骤 
+2. **访问订阅**：
+   - Base64 格式：`https://your-worker.workers.dev`
+   - 指定格式：添加查询参数，如 `?target=clash` (Clash) 或 `?surge` (Surge)。
+   - 示例：`https://your-worker.workers.dev?clash`
 
-1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/) > Workers & Pages > 创建应用 > Workers > 上传`_worker.js`。 
-2. 配置环境变量（可选）：`SUBAPI`、`SUBCONFIG`覆盖默认。 
-3. 测试：访问Worker URL，下载订阅文件解码验证节点。 
+3. **查询参数**：
+   - `?trojan=1`：使用 Trojan 模板。
+   - `?uuid=xxx`：覆盖 VLESS UUID。
+   - `?mima=yyy`：覆盖 Trojan 密码。
+   - `?hostV=zzz`：覆盖 VLESS Host/SNI。
+   - `?hostT=www`：覆盖 Trojan Host/SNI。
+   - `?fdip=ip:port`：强制所有节点使用指定 FDIP。
+   - `?fdip=all`：所有来源 (UNI/IPS/DIFF) 使用 FDIP 反代。
+   - `?b64` 或 `?base64`：强制 Base64 输出。
 
-## 示例节点输出 
+## 示例节点生成
 
-VLESS（无fdip，简化）： 
-``` 
-vless://UUID@[ip]:[port]?path=%2Fsnippets%2Fip%3D[ip]:[port]&...#[name] 
-vless://...@[ip]:[port]?path=%2Fsnippets%2Fip%3Ddomain%3Aport&...#[name] 
-``` 
+- **VLESS (默认)**：`vless://uuid@[ip]:[port]?path=[path]&...#[name]`
+- **Trojan**：`trojan://password@[ip]:[port]?path=[path]&...#[name]`
+- Path 示例：`/snippets/ip=fdip.example.com:443` (VLESS) 或 `/proxyip=fdip.example.com:443` (Trojan)。
 
-Trojan（有fdip=example.com:443）： 
-``` 
-trojan://PASSWORD@[ip]:[port]?...&path=%2Fproxyip%3Dexample.com%3A443#[name] 
-``` 
+## 订阅格式支持
 
-## 故障排除 
+| 格式       | User-Agent 或参数          | 目标模板          |
+|------------|----------------------------|-------------------|
+| Base64    | 默认或 `?b64`             | Base64 编码      |
+| Clash     | `clash` 或 Clash UA       | Clash YAML       |
+| Surge     | `surge`                   | Surge.conf       |
+| Quantumult X | `quanx`                | Quantumult.conf  |
+| Loon      | `loon`                    | Loon.conf        |
+| Sing-box  | `sb` 或 `singbox`         | Sing-box JSON    |
 
-- **无节点**：检查配置，确保至少一个来源启用。 
-- **FDIP错误**：IPS/DIFF启用时，FDIP不能为空。 
-- **转换失败**：fallback到base64，检查subConverter连通性。 
-- **日志**：Workers控制台查看console.error。 
+## 注意事项
 
-## 贡献 
+- **FDIP 检查**：如果 IPS/DIFF 或 `?fdip=all` 启用，但 FDIP 为空，会返回 500 错误。
+- **去重**：自动去除重复节点。
+- **错误处理**：API 拉取失败 fallback 为空；KV 未绑定 fallback 到常量 FDIP。
+- **性能**：适合低频使用；高负载可优化缓存。
+- **自定义**：Clash 输出有 WireGuard 修复；Base64 使用内置编码。
+- **许可证**：MIT License。
 
-欢迎PR！fork仓库，修改`_worker.js`，提交issue反馈。 
+## 贡献
 
-## 许可证 
+欢迎 PR 或 Issue。测试时，请使用占位符替换敏感配置。
 
-MIT License - 免费使用、修改、分发。
+---
+
+*最后更新：2025-10-05*
