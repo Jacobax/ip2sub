@@ -1,6 +1,6 @@
 // ===== 配置变量 =====
-const subConverter = 'SUBAPI.cmliussss.net'; // 订阅转换后端
-const subConfig = 'https://raw.githubusercontent.com/cmliu/ACL4SSR/main/Clash/config/ACL4SSR_Online_Full_MultiMode.ini'; // 订阅配置文件
+const subConverter = ''; // 订阅转换后端
+const subConfig = ''; // 订阅配置文件
 const FileName = 'CF-Workers-SUB'; // 下载文件名
 const SUBUpdateTime = 6; // 订阅更新间隔（小时）
 
@@ -11,6 +11,7 @@ const hostV = ''; // VLESS host/sni 值
 const hostT = ''; // Trojan host/sni 值
 const VLESS_PATH_PREFIX = '/snippets/ip='; // VLESS path 前缀
 const TROJAN_PATH_PREFIX = '/proxyip='; // Trojan path 前缀
+const UNI_COUNT = 0; // 从每个 name 抽取数量，0 表示全取
 
 // API 地址（为空字符串则禁用）
 const apiUni = ''; // 反代IP同优选IP，记为UNI API
@@ -27,8 +28,7 @@ const IPS = [
 
 // FDIP 列表（为空数组则禁用，但需检查使用条件）
 const FDIP = [
-  'ProxyIP.JP.CMLiussss.net:443#JP',
-  'ProxyIP.SG.CMLiussss.net:443#SG'
+  ''
 ];
 
 // KV FDIP 键名（用于从 KV 空间读取额外 FDIP 来源）
@@ -68,7 +68,7 @@ function generatePath(useTrojan, pathIp, pathPort, vlessPrefix, trojanPrefix) {
 
 // ===== 辅助函数：选择FDIP（匹配name或随机，忽略大小写） =====
 function selectFdip(name, validFDIP) {
-  if (validFDIP.length === 0) return null;
+  if (validFDIP.length === 0) return [null, null];
   const matches = [];
   for (const fdip of validFDIP) {
     const [_, fdipName] = fdip.line.split('#');
@@ -101,6 +101,31 @@ async function fetchApiLines(apiUrl) {
   }
 }
 
+// ===== 新增辅助函数：按 name 分组随机抽取 =====
+function randomSampleByName(lines, count) {
+  if (!count || count <= 0) return lines;
+  const grouped = {};
+  for (const line of lines) {
+    const key = line.name || 'unknown';
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(line);
+  }
+  const result = [];
+  for (const key in grouped) {
+    const group = grouped[key];
+    if (group.length <= count) {
+      result.push(...group);
+    } else {
+      for (let i = group.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [group[i], group[j]] = [group[j], group[i]];
+      }
+      result.push(...group.slice(0, count));
+    }
+  }
+  return result;
+}
+
 // ===== 辅助函数：生成单个节点 =====
 function generateNode(template, ip, port, rawName, pathIp, pathPort, vlessPrefix, trojanPrefix) {
   const name = rawName?.trim() || ip;
@@ -118,8 +143,8 @@ function generateNode(template, ip, port, rawName, pathIp, pathPort, vlessPrefix
 function processNodes(lines, template, useForcedFdip, forcedIpFdip, forcedPortFdip, useAllFdip, validFDIP, vlessPrefix, trojanPrefix, isUni = false) {
   if (!lines?.length) return [];
   return lines.map(({ ip, port, name: rawName }) => {
-    let pathIp = isUni ? ip : ip; // UNI 默认使用自身
-    let pathPort = isUni ? port : port;
+    let pathIp = ip; 
+    let pathPort = port;
     if (useForcedFdip) {
       pathIp = forcedIpFdip;
       pathPort = forcedPortFdip;
@@ -148,6 +173,7 @@ export default {
       const dynamicHostT = reqUrl.searchParams.get('hostT') || hostT;
       const dynamicVlessPrefix = reqUrl.searchParams.get('vlessPrefix') || VLESS_PATH_PREFIX;
       const dynamicTrojanPrefix = reqUrl.searchParams.get('trojanPrefix') || TROJAN_PATH_PREFIX;
+      const uniCount = parseInt(reqUrl.searchParams.get('uni_count') || UNI_COUNT || 0);
 
       // 构建模板
       const vlessTemplate = `vless://${dynamicUUID}@[ip]:[port]?path=[path]&security=tls&alpn=h3&encryption=none&host=${dynamicHostV}&fp=random&type=ws&sni=${dynamicHostV}#[name]`;
@@ -176,13 +202,18 @@ export default {
       const kvValidFDIP = await fetchKvFdip(env, KV_FDIP_KEY);
       const validFDIP = [...constantValidFDIP, ...kvValidFDIP];
 
-      // 处理节点来源
-      const uniLines = await fetchApiLines(apiUni);
+      // 处理 UNI 节点
+      let uniLines = await fetchApiLines(apiUni);
+      if (uniLines.length && uniCount > 0) {
+        uniLines = randomSampleByName(uniLines, uniCount);
+      }
       const apiNodes = processNodes(uniLines, template, useForcedFdip, forcedIpFdip, forcedPortFdip, useAllFdip, validFDIP, dynamicVlessPrefix, dynamicTrojanPrefix, true);
 
+      // 处理 IPS 节点
       const ipsLines = IPS.map(parseLine).filter(Boolean);
       const ipsNodes = processNodes(ipsLines, template, useForcedFdip, forcedIpFdip, forcedPortFdip, useAllFdip, validFDIP, dynamicVlessPrefix, dynamicTrojanPrefix, false);
 
+      // 处理 DIFF 节点
       const diffLines = await fetchApiLines(apiDiff);
       const newNodes = processNodes(diffLines, template, useForcedFdip, forcedIpFdip, forcedPortFdip, useAllFdip, validFDIP, dynamicVlessPrefix, dynamicTrojanPrefix, false);
 
@@ -200,6 +231,7 @@ export default {
 
       const nodes = allNodes.join('\n');
       return handleSubscription(request, nodes, request.url, 'mytoken', env);
+
     } catch (e) {
       return new Response('运行错误: ' + (e?.message || String(e)), { status: 500 });
     }
@@ -212,13 +244,11 @@ async function handleSubscription(request, req_data, 订阅转换URL, mytoken, e
   const userAgent = userAgentHeader.toLowerCase();
   const url = new URL(request.url);
 
-  // 覆盖默认配置（支持环境变量）
   const converter = env?.SUBAPI || subConverter;
   const subProtocol = converter.includes('http://') ? 'http' : 'https';
   const subConverterHost = converter.includes('://') ? converter.split('//')[1] : converter;
   const configFile = env?.SUBCONFIG || subConfig;
 
-  // 确定订阅格式
   let subscriptionFormat = 'base64';
   if (!(userAgent.includes('null') || userAgent.includes('subconverter') || userAgent.includes('nekobox') || userAgent.includes('cf-workers-sub'))) {
     if (userAgent.includes('sing-box') || userAgent.includes('singbox') || url.searchParams.has('sb') || url.searchParams.has('singbox')) {
@@ -235,11 +265,9 @@ async function handleSubscription(request, req_data, 订阅转换URL, mytoken, e
   }
   if (url.searchParams.has('b64') || url.searchParams.has('base64')) subscriptionFormat = 'base64';
 
-  // 去重
   const lines = req_data.split('\n').filter(l => l.trim());
   const result = [...new Set(lines)].join('\n');
 
-  // Base64 编码
   let base64Data;
   try {
     base64Data = btoa(result);
@@ -247,7 +275,6 @@ async function handleSubscription(request, req_data, 订阅转换URL, mytoken, e
     base64Data = encodeBase64(result);
   }
 
-  // 响应头
   const responseHeaders = {
     'content-type': 'text/plain; charset=utf-8',
     'Profile-Update-Interval': `${SUBUpdateTime}`,
@@ -257,12 +284,8 @@ async function handleSubscription(request, req_data, 订阅转换URL, mytoken, e
     responseHeaders['Content-Disposition'] = `attachment; filename*=utf-8''${encodeURIComponent(FileName)}`;
   }
 
-  // 原始 base64 返回
-  if (subscriptionFormat === 'base64') {
-    return new Response(base64Data, { headers: responseHeaders });
-  }
+  if (subscriptionFormat === 'base64') return new Response(base64Data, { headers: responseHeaders });
 
-  // 构造订阅转换 URL
   const target = subscriptionFormat === 'singbox' ? 'singbox' :
                 subscriptionFormat === 'surge' ? 'surge&ver=4' :
                 subscriptionFormat === 'quanx' ? 'quanx&udp=true' :
