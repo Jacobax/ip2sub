@@ -41,9 +41,9 @@
 ## 🔢 查询参数说明  
 
 以下参数可直接在订阅链接后追加，例如：
-
+```
 https://example.workers.dev/?target=clash&uni_count=5&diff_count=3
-
+```
 | 参数 | 默认值 | 说明 |
 | :-- | :-- | :-- |
 | `target` | `singbox` | 订阅输出格式，可选 `clash` / `singbox` |
@@ -83,25 +83,25 @@ https://example.workers.dev/?target=clash&uni_count=5&diff_count=3
 ## 🔍 示例链接  
 
 **普通订阅（VLESS）**
-
+```
 https://your-worker.workers.dev/?target=singbox
-
+```
 **Clash 订阅**
-
+```
 https://your-worker.workers.dev/?target=clash
-
+```
 **仅取 3 条 UNI 来源节点并禁用 DIFF 来源**
-
+```
 https://your-worker.workers.dev/?uni_count=3&diff_count=0
-
+```
 **使用固定 FDIP**
-
+```
 https://your-worker.workers.dev/?fdip=1.2.3.4:443
-
+```
 **启用 Trojan 模式**
-
+```
 https://your-worker.workers.dev/?trojan=1
-
+```
 ---
 
 ## 🧾 调试建议  
