@@ -9,13 +9,14 @@ const UUID = ''; // VLESS UUID
 const MIMA = ''; // Trojan 密码
 const hostV = ''; // VLESS host/sni 值
 const hostT = ''; // Trojan host/sni 值
-const VLESS_PATH_PREFIX = '/snippets/ip='; // VLESS path 前缀
-const TROJAN_PATH_PREFIX = '/proxyip='; // Trojan path 前缀
-const UNI_COUNT = 0; // 从每个 name 抽取数量，0 表示全取
+const VLESS_PATH_PREFIX = '/snippets/ip='; // VLESS path 前缀（白嫖哥）
+const TROJAN_PATH_PREFIX = '/proxyip='; // Trojan path 前缀（CM）
+const UNI_COUNT = 5; // 从每个 name 抽取数量，0 表示禁用，all 表示全取
+const DIFF_COUNT = 5; // 同上，适用于 DIFF 来源
 
 // API 地址（为空字符串则禁用）
-const apiUni = ''; // 反代IP同优选IP，记为UNI API
-const apiDiff = ''; // 反代IP取自FDIP，记为DIFF API
+const apiUni = ''; // UNI API
+const apiDiff = ''; // DIFF API
 
 // IPS 列表（为空数组则禁用）
 const IPS = [
@@ -26,15 +27,16 @@ const IPS = [
    'www.shopify.com:443#官方'
 ];
 
-// FDIP 列表（为空数组则禁用，但需检查使用条件）
+// FDIP 列表
 const FDIP = [
+  '',
   ''
 ];
 
-// KV FDIP 键名（用于从 KV 空间读取额外 FDIP 来源）
-const KV_FDIP_KEY = 'FDIP_LIST'; // 可根据需要调整 KV 键名
+// KV FDIP 键名
+const KV_FDIP_KEY = 'FDIP_LIST';
 
-// ===== 辅助函数：解析 line (ip:port#name) =====
+// ===== 辅助函数 =====
 function parseLine(line) {
   if (!line || !line.includes(':')) return null;
   const [addr, rawName = ''] = line.split('#');
@@ -44,7 +46,6 @@ function parseLine(line) {
   return { ip, port: port.toString(), name: rawName.trim() };
 }
 
-// ===== 辅助函数：从 KV 读取 FDIP =====
 async function fetchKvFdip(env, key) {
   if (!env?.KV) return [];
   try {
@@ -59,14 +60,12 @@ async function fetchKvFdip(env, key) {
   }
 }
 
-// ===== 辅助函数：生成path =====
 function generatePath(useTrojan, pathIp, pathPort, vlessPrefix, trojanPrefix) {
   const prefix = useTrojan ? trojanPrefix : vlessPrefix;
   const rawPath = `${prefix}${pathIp}:${pathPort}`;
   return encodeURIComponent(rawPath);
 }
 
-// ===== 辅助函数：选择FDIP（匹配name或随机，忽略大小写） =====
 function selectFdip(name, validFDIP) {
   if (validFDIP.length === 0) return [null, null];
   const matches = [];
@@ -76,13 +75,12 @@ function selectFdip(name, validFDIP) {
       matches.push(fdip);
     }
   }
-  const selectedFdip = matches.length > 0 
+  const selectedFdip = matches.length > 0
     ? matches[Math.floor(Math.random() * matches.length)]
     : validFDIP[Math.floor(Math.random() * validFDIP.length)];
   return [selectedFdip.ip, selectedFdip.port];
 }
 
-// ===== 辅助函数：拉取API lines =====
 async function fetchApiLines(apiUrl) {
   if (!apiUrl?.trim()) return [];
   try {
@@ -101,9 +99,9 @@ async function fetchApiLines(apiUrl) {
   }
 }
 
-// ===== 新增辅助函数：按 name 分组随机抽取 =====
 function randomSampleByName(lines, count) {
-  if (!count || count <= 0) return lines;
+  if (count === 'all') return lines;
+  if (!count || count <= 0) return [];
   const grouped = {};
   for (const line of lines) {
     const key = line.name || 'unknown';
@@ -126,7 +124,6 @@ function randomSampleByName(lines, count) {
   return result;
 }
 
-// ===== 辅助函数：生成单个节点 =====
 function generateNode(template, ip, port, rawName, pathIp, pathPort, vlessPrefix, trojanPrefix) {
   const name = rawName?.trim() || ip;
   const nameEnc = encodeURIComponent(name);
@@ -139,11 +136,10 @@ function generateNode(template, ip, port, rawName, pathIp, pathPort, vlessPrefix
     .replaceAll('[name]', nameEnc);
 }
 
-// ===== 辅助函数：处理节点来源 =====
 function processNodes(lines, template, useForcedFdip, forcedIpFdip, forcedPortFdip, useAllFdip, validFDIP, vlessPrefix, trojanPrefix, isUni = false) {
   if (!lines?.length) return [];
   return lines.map(({ ip, port, name: rawName }) => {
-    let pathIp = ip; 
+    let pathIp = ip;
     let pathPort = port;
     if (useForcedFdip) {
       pathIp = forcedIpFdip;
@@ -166,21 +162,30 @@ export default {
       const reqUrl = new URL(request.url);
       const useTrojan = reqUrl.searchParams.get('trojan') === '1';
 
-      // 获取动态参数
       const dynamicUUID = reqUrl.searchParams.get('uuid') || UUID;
       const dynamicMima = reqUrl.searchParams.get('mima') || MIMA;
       const dynamicHostV = reqUrl.searchParams.get('hostV') || hostV;
       const dynamicHostT = reqUrl.searchParams.get('hostT') || hostT;
       const dynamicVlessPrefix = reqUrl.searchParams.get('vlessPrefix') || VLESS_PATH_PREFIX;
       const dynamicTrojanPrefix = reqUrl.searchParams.get('trojanPrefix') || TROJAN_PATH_PREFIX;
-      const uniCount = parseInt(reqUrl.searchParams.get('uni_count') || UNI_COUNT || 0);
 
-      // 构建模板
+      function parseCount(param, defaultValue) {
+        const val = reqUrl.searchParams.get(param);
+        if (!val) return defaultValue;
+        if (val === '0') return 0;
+        if (val.toLowerCase() === 'all') return 'all';
+        const num = parseInt(val, 10);
+        return isNaN(num) ? defaultValue : num;
+      }
+
+      const uniCount = parseCount('uni_count', UNI_COUNT);
+      const diffCount = parseCount('diff_count', DIFF_COUNT);
+
       const vlessTemplate = `vless://${dynamicUUID}@[ip]:[port]?path=[path]&security=tls&alpn=h3&encryption=none&host=${dynamicHostV}&fp=random&type=ws&sni=${dynamicHostV}#[name]`;
       const trojanTemplate = `trojan://${dynamicMima}@[ip]:[port]?security=tls&sni=${dynamicHostT}&fp=chrome&type=ws&host=${dynamicHostT}&path=[path]#[name]`;
       const template = useTrojan ? trojanTemplate : vlessTemplate;
 
-      // 处理 FDIP 参数
+      // FDIP 参数
       const forcedFdip = reqUrl.searchParams.get('fdip');
       let forcedIpFdip, forcedPortFdip;
       let useForcedFdip = false;
@@ -197,33 +202,39 @@ export default {
         }
       }
 
-      // 加载 FDIP
       const constantValidFDIP = FDIP.map(line => ({ line, ...parseLine(line) })).filter(item => item.ip);
       const kvValidFDIP = await fetchKvFdip(env, KV_FDIP_KEY);
       const validFDIP = [...constantValidFDIP, ...kvValidFDIP];
 
-      // 处理 UNI 节点
-      let uniLines = await fetchApiLines(apiUni);
-      if (uniLines.length && uniCount > 0) {
-        uniLines = randomSampleByName(uniLines, uniCount);
+      // UNI 来源
+      let apiNodes = [];
+      if (uniCount !== 0 && apiUni?.trim()) {
+        let uniLines = await fetchApiLines(apiUni);
+        if (uniLines.length && uniCount !== 'all') {
+          uniLines = randomSampleByName(uniLines, uniCount);
+        }
+        apiNodes = processNodes(uniLines, template, useForcedFdip, forcedIpFdip, forcedPortFdip, useAllFdip, validFDIP, dynamicVlessPrefix, dynamicTrojanPrefix, true);
       }
-      const apiNodes = processNodes(uniLines, template, useForcedFdip, forcedIpFdip, forcedPortFdip, useAllFdip, validFDIP, dynamicVlessPrefix, dynamicTrojanPrefix, true);
 
-      // 处理 IPS 节点
+      // IPS 来源
       const ipsLines = IPS.map(parseLine).filter(Boolean);
       const ipsNodes = processNodes(ipsLines, template, useForcedFdip, forcedIpFdip, forcedPortFdip, useAllFdip, validFDIP, dynamicVlessPrefix, dynamicTrojanPrefix, false);
 
-      // 处理 DIFF 节点
-      const diffLines = await fetchApiLines(apiDiff);
-      const newNodes = processNodes(diffLines, template, useForcedFdip, forcedIpFdip, forcedPortFdip, useAllFdip, validFDIP, dynamicVlessPrefix, dynamicTrojanPrefix, false);
+      // DIFF 来源
+      let newNodes = [];
+      if (diffCount !== 0 && apiDiff?.trim()) {
+        let diffLines = await fetchApiLines(apiDiff);
+        if (diffLines.length && diffCount !== 'all') {
+          diffLines = randomSampleByName(diffLines, diffCount);
+        }
+        newNodes = processNodes(diffLines, template, useForcedFdip, forcedIpFdip, forcedPortFdip, useAllFdip, validFDIP, dynamicVlessPrefix, dynamicTrojanPrefix, false);
+      }
 
-      // 合并节点
       const allNodes = [...apiNodes, ...ipsNodes, ...newNodes];
       if (allNodes.length === 0) {
         return new Response('暂无可用节点，请检查API/IPS配置', { status: 404 });
       }
 
-      // FDIP 检查
       const hasFdipDependent = (ipsNodes.length > 0 || newNodes.length > 0 || (useAllFdip && apiNodes.length > 0));
       if (hasFdipDependent && !useForcedFdip && validFDIP.length === 0) {
         return new Response('配置错误：FDIP格式无效或为空', { status: 500 });
@@ -304,7 +315,7 @@ async function handleSubscription(request, req_data, 订阅转换URL, mytoken, e
   }
 }
 
-// ===== Base64 编码辅助函数 =====
+// ===== Base64 辅助函数 =====
 function encodeBase64(data) {
   const binary = new TextEncoder().encode(data);
   let base64 = '';
@@ -322,7 +333,7 @@ function encodeBase64(data) {
   return base64.slice(0, base64.length - padding) + '=='.slice(0, padding);
 }
 
-// ===== Clash 配置修复辅助函数 =====
+// ===== Clash 修复函数 =====
 function clashFix(content) {
   if (content.includes('wireguard') && !content.includes('remote-dns-resolve')) {
     const lines = content.split(/\r?\n/);
