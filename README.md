@@ -117,36 +117,36 @@ https://your-worker.workers.dev/?trojan=1
 以下为环境变量内容示例（所有示例均为伪造数据）：  
 
 **IPS**
-
+```
 1.1.1.1:443#HK_AWS
 2.2.2.2:443#JP_Tokyo
 3.3.3.3:2053#US_LA
-
+```
 **FDIP**
-
+```
 104.16.10.5:8443#cfnode1
 104.19.21.7:2053#cfnode2
 104.20.33.8:2087#cfnode3
-
+```
 **apiUni**
-
+```
 https://api.example.com/uni?name=hk
 https://api.example.com/uni?name=jp
 https://api.example.com/uni?name=us
-
+```
 **apiDiff**
-
+```
 https://api.example.com/diff?region=hk
 https://api.example.com/diff?region=jp
 https://api.example.com/diff?region=us
-
+```
 ---
 
 ## 📚 文件结构
 
-. ├── _worker.js      # Cloudflare Worker 主程序
-├── README.md       # 使用文档
-└── /KV/            # KV 存储命名空间（仅说明，不是实际文件夹）
+. ├── _worker.js      # Cloudflare Worker 主程序  
+├── README.md       # 使用文档  
+└── /KV/            # KV 存储命名空间（仅说明，不是实际文件夹）  
 
 ---
 
@@ -157,7 +157,7 @@ MIT License
 
 ---
 
-**最后更新：** 2025-10
+**最后更新：** 2025-13
 
 
 ---
