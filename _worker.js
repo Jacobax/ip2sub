@@ -1,351 +1,270 @@
-// ===== 配置变量 =====
-const subConverter = ''; // 订阅转换后端
-const subConfig = ''; // 订阅配置文件
-const FileName = 'CF-Workers-SUB'; // 下载文件名
-const SUBUpdateTime = 6; // 订阅更新间隔（小时）
+// ===== 配置区 =====
+const CONFIG = {
+  SUB_API: '',	//转换后端
+  SUB_CONFIG: '',	//转换配置
+  FILE_NAME: 'CF-Workers-SUB',
+  UPDATE_INTERVAL: 6,
 
-// 通用配置参数（默认值，可被查询参数覆盖）
-const UUID = ''; // VLESS UUID
-const MIMA = ''; // Trojan 密码
-const hostV = ''; // VLESS host/sni 值
-const hostT = ''; // Trojan host/sni 值
-const VLESS_PATH_PREFIX = '/snippets/ip='; // VLESS path 前缀（白嫖哥）
-const TROJAN_PATH_PREFIX = '/proxyip='; // Trojan path 前缀（CM）
-const UNI_COUNT = 5; // 从每个 name 抽取数量，0 表示禁用，all 表示全取
-const DIFF_COUNT = 5; // 同上，适用于 DIFF 来源
+  UUID: '',	//vless uuid
+  MIMA: '',	//trojan密码
+  HOST_V: '',	//vless host
+  HOST_T: '',	//trojan host
+  VLESS_PREFIX: '/snippets/ip=',	//vless path前缀(白嫖哥)
+  TROJAN_PREFIX: '/proxyip=',	//trojan path前缀(CM)
 
-// API 地址（为空字符串则禁用）
-const apiUni = ''; // UNI API
-const apiDiff = ''; // DIFF API
+  UNI_COUNT: 5,	//API_UNI各name取量, 0禁用, all全取
+  DIFF_COUNT: 5,	//API_DIFF~同上
 
-// IPS 列表（为空数组则禁用）
-const IPS = [
-   'cf.qmqm.cf:443#官方',
-   'mfa.gov.ua:443#官方',
-   'cm.cf.090227.xyz:443#官方',
-   'download.yunzhongzhuan.com:443#官方',
-   'www.shopify.com:443#官方'
-];
+  API_UNI: '',	//反代同优选 API
+  API_DIFF: '',	//反代取自fdip API
 
-// FDIP 列表
-const FDIP = [
-  '',
-  ''
-];
+  IPS: [	//固定优选
+    'cf.qmqm.cf:443#官方',
+    'mfa.gov.ua:443#官方',
+    'cm.cf.090227.xyz:443#官方',
+    'download.yunzhongzhuan.com:443#官方',
+    'www.shopify.com:443#官方',
+  ],
 
-// KV FDIP 键名
-const KV_FDIP_KEY = 'FDIP_LIST';
+  FDIP: [	//固定反代
+    'us.proxyip.com:443#US',
+  ],
 
-// ===== 辅助函数 =====
-function parseLine(line) {
-  if (!line || !line.includes(':')) return null;
-  const [addr, rawName = ''] = line.split('#');
-  const [ip, portStr] = addr.split(':');
-  const port = parseInt(portStr, 10);
-  if (!ip || isNaN(port) || port < 1 || port > 65535) return null;
-  return { ip, port: port.toString(), name: rawName.trim() };
-}
+  KV_FDIP_KEY: 'FDIP_LIST',	//KV源反代
+};
 
-async function fetchKvFdip(env, key) {
-  if (!env?.KV) return [];
+// ===== 工具函数 =====
+const log = (...a) => console.log('[LOG]', ...a);
+const err = (...a) => console.error('[ERR]', ...a);
+
+const parseLine = (line) => {
+  if (!line?.includes(':')) return null;
+  const [addr, name = ''] = line.split('#');
+  const [ip, port] = addr.split(':');
+  const portNum = parseInt(port, 10);
+  if (!ip || isNaN(portNum) || portNum < 1 || portNum > 65535) return null;
+  return { ip, port: String(portNum), name: name.trim() };
+};
+
+const fetchLines = async (url) => {
+  if (!url?.trim()) return [];
   try {
-    const value = await env.KV.get(key);
-    if (!value) return [];
-    return value.split('\n')
-      .map(line => ({ line, ...parseLine(line) }))
-      .filter(item => item.ip);
+    const r = await fetch(url);
+    if (!r.ok) return [];
+    return r.text().then(t => t.split('\n').map(parseLine).filter(Boolean));
   } catch (e) {
-    console.error(`KV ${key} 读取异常:`, e);
+    err(`Fetch失败: ${url}`, e);
     return [];
-  }
-}
-
-function generatePath(useTrojan, pathIp, pathPort, vlessPrefix, trojanPrefix) {
-  const prefix = useTrojan ? trojanPrefix : vlessPrefix;
-  const rawPath = `${prefix}${pathIp}:${pathPort}`;
-  return encodeURIComponent(rawPath);
-}
-
-function selectFdip(name, validFDIP) {
-  if (validFDIP.length === 0) return [null, null];
-  const matches = [];
-  for (const fdip of validFDIP) {
-    const [_, fdipName] = fdip.line.split('#');
-    if (name.toLowerCase().includes(fdipName.toLowerCase().trim())) {
-      matches.push(fdip);
-    }
-  }
-  const selectedFdip = matches.length > 0
-    ? matches[Math.floor(Math.random() * matches.length)]
-    : validFDIP[Math.floor(Math.random() * validFDIP.length)];
-  return [selectedFdip.ip, selectedFdip.port];
-}
-
-async function fetchApiLines(apiUrl) {
-  if (!apiUrl?.trim()) return [];
-  try {
-    const res = await fetch(apiUrl);
-    if (!res.ok) {
-      console.error(`${apiUrl} 拉取失败`);
-      return [];
-    }
-    const text = await res.text();
-    return text.split('\n')
-      .map(parseLine)
-      .filter(Boolean);
-  } catch (e) {
-    console.error(`${apiUrl} 拉取异常:`, e);
-    return [];
-  }
-}
-
-function randomSampleByName(lines, count) {
-  if (count === 'all') return lines;
-  if (!count || count <= 0) return [];
-  const grouped = {};
-  for (const line of lines) {
-    const key = line.name || 'unknown';
-    if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(line);
-  }
-  const result = [];
-  for (const key in grouped) {
-    const group = grouped[key];
-    if (group.length <= count) {
-      result.push(...group);
-    } else {
-      for (let i = group.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [group[i], group[j]] = [group[j], group[i]];
-      }
-      result.push(...group.slice(0, count));
-    }
-  }
-  return result;
-}
-
-function generateNode(template, ip, port, rawName, pathIp, pathPort, vlessPrefix, trojanPrefix) {
-  const name = rawName?.trim() || ip;
-  const nameEnc = encodeURIComponent(name);
-  const useTrojan = template.includes('trojan://');
-  const pathParam = generatePath(useTrojan, pathIp, pathPort, vlessPrefix, trojanPrefix);
-  return template
-    .replaceAll('[ip]', ip)
-    .replaceAll('[port]', port)
-    .replaceAll('[path]', pathParam)
-    .replaceAll('[name]', nameEnc);
-}
-
-function processNodes(lines, template, useForcedFdip, forcedIpFdip, forcedPortFdip, useAllFdip, validFDIP, vlessPrefix, trojanPrefix, isUni = false) {
-  if (!lines?.length) return [];
-  return lines.map(({ ip, port, name: rawName }) => {
-    let pathIp = ip;
-    let pathPort = port;
-    if (useForcedFdip) {
-      pathIp = forcedIpFdip;
-      pathPort = forcedPortFdip;
-    } else if (useAllFdip || !isUni) {
-      const [fdipIp, fdipPort] = selectFdip(rawName, validFDIP);
-      if (fdipIp) {
-        pathIp = fdipIp;
-        pathPort = fdipPort;
-      }
-    }
-    return generateNode(template, ip, port, rawName, pathIp, pathPort, vlessPrefix, trojanPrefix);
-  });
-}
-
-// ===== Worker 主逻辑 =====
-export default {
-  async fetch(request, env) {
-    try {
-      const reqUrl = new URL(request.url);
-      const useTrojan = reqUrl.searchParams.get('trojan') === '1';
-
-      const dynamicUUID = reqUrl.searchParams.get('uuid') || UUID;
-      const dynamicMima = reqUrl.searchParams.get('mima') || MIMA;
-      const dynamicHostV = reqUrl.searchParams.get('hostV') || hostV;
-      const dynamicHostT = reqUrl.searchParams.get('hostT') || hostT;
-      const dynamicVlessPrefix = reqUrl.searchParams.get('vlessPrefix') || VLESS_PATH_PREFIX;
-      const dynamicTrojanPrefix = reqUrl.searchParams.get('trojanPrefix') || TROJAN_PATH_PREFIX;
-
-      function parseCount(param, defaultValue) {
-        const val = reqUrl.searchParams.get(param);
-        if (!val) return defaultValue;
-        if (val === '0') return 0;
-        if (val.toLowerCase() === 'all') return 'all';
-        const num = parseInt(val, 10);
-        return isNaN(num) ? defaultValue : num;
-      }
-
-      const uniCount = parseCount('uni_count', UNI_COUNT);
-      const diffCount = parseCount('diff_count', DIFF_COUNT);
-
-      const vlessTemplate = `vless://${dynamicUUID}@[ip]:[port]?path=[path]&security=tls&alpn=h3&encryption=none&host=${dynamicHostV}&fp=random&type=ws&sni=${dynamicHostV}#[name]`;
-      const trojanTemplate = `trojan://${dynamicMima}@[ip]:[port]?security=tls&sni=${dynamicHostT}&fp=chrome&type=ws&host=${dynamicHostT}&path=[path]#[name]`;
-      const template = useTrojan ? trojanTemplate : vlessTemplate;
-
-      // FDIP 参数
-      const forcedFdip = reqUrl.searchParams.get('fdip');
-      let forcedIpFdip, forcedPortFdip;
-      let useForcedFdip = false;
-      let useAllFdip = false;
-      if (forcedFdip === 'all') {
-        useAllFdip = true;
-      } else if (forcedFdip?.includes(':')) {
-        const [ip, portStr] = forcedFdip.trim().split(':');
-        const port = parseInt(portStr, 10);
-        if (ip && !isNaN(port) && port >= 1 && port <= 65535) {
-          forcedIpFdip = ip;
-          forcedPortFdip = port.toString();
-          useForcedFdip = true;
-        }
-      }
-
-      const constantValidFDIP = FDIP.map(line => ({ line, ...parseLine(line) })).filter(item => item.ip);
-      const kvValidFDIP = await fetchKvFdip(env, KV_FDIP_KEY);
-      const validFDIP = [...constantValidFDIP, ...kvValidFDIP];
-
-      // UNI 来源
-      let apiNodes = [];
-      if (uniCount !== 0 && apiUni?.trim()) {
-        let uniLines = await fetchApiLines(apiUni);
-        if (uniLines.length && uniCount !== 'all') {
-          uniLines = randomSampleByName(uniLines, uniCount);
-        }
-        apiNodes = processNodes(uniLines, template, useForcedFdip, forcedIpFdip, forcedPortFdip, useAllFdip, validFDIP, dynamicVlessPrefix, dynamicTrojanPrefix, true);
-      }
-
-      // IPS 来源
-      const ipsLines = IPS.map(parseLine).filter(Boolean);
-      const ipsNodes = processNodes(ipsLines, template, useForcedFdip, forcedIpFdip, forcedPortFdip, useAllFdip, validFDIP, dynamicVlessPrefix, dynamicTrojanPrefix, false);
-
-      // DIFF 来源
-      let newNodes = [];
-      if (diffCount !== 0 && apiDiff?.trim()) {
-        let diffLines = await fetchApiLines(apiDiff);
-        if (diffLines.length && diffCount !== 'all') {
-          diffLines = randomSampleByName(diffLines, diffCount);
-        }
-        newNodes = processNodes(diffLines, template, useForcedFdip, forcedIpFdip, forcedPortFdip, useAllFdip, validFDIP, dynamicVlessPrefix, dynamicTrojanPrefix, false);
-      }
-
-      const allNodes = [...apiNodes, ...ipsNodes, ...newNodes];
-      if (allNodes.length === 0) {
-        return new Response('暂无可用节点，请检查API/IPS配置', { status: 404 });
-      }
-
-      const hasFdipDependent = (ipsNodes.length > 0 || newNodes.length > 0 || (useAllFdip && apiNodes.length > 0));
-      if (hasFdipDependent && !useForcedFdip && validFDIP.length === 0) {
-        return new Response('配置错误：FDIP格式无效或为空', { status: 500 });
-      }
-
-      const nodes = allNodes.join('\n');
-      return handleSubscription(request, nodes, request.url, 'mytoken', env);
-
-    } catch (e) {
-      return new Response('运行错误: ' + (e?.message || String(e)), { status: 500 });
-    }
   }
 };
 
-// ===== 订阅转换函数 =====
-async function handleSubscription(request, req_data, 订阅转换URL, mytoken, env) {
-  const userAgentHeader = request.headers.get('User-Agent') || 'unknown';
-  const userAgent = userAgentHeader.toLowerCase();
-  const url = new URL(request.url);
+const fetchKvList = async (env, key) => {
+  if (!env?.KV) return [];
+  try {
+    const v = await env.KV.get(key);
+    return v ? v.split('\n').map(line => ({ line, ...parseLine(line) })).filter(x => x.ip) : [];
+  } catch (e) {
+    err(`KV读取失败: ${key}`, e);
+    return [];
+  }
+};
 
-  const converter = env?.SUBAPI || subConverter;
-  const subProtocol = converter.includes('http://') ? 'http' : 'https';
-  const subConverterHost = converter.includes('://') ? converter.split('//')[1] : converter;
-  const configFile = env?.SUBCONFIG || subConfig;
+const randomSampleByName = (list, count) => {
+  if (count === 'all') return list;
+  if (!count || count <= 0) return [];
+  const grouped = list.reduce((acc, x) => {
+    const key = x.name || 'unknown';
+    acc[key] = acc[key] || [];
+    acc[key].push(x);
+    return acc;
+  }, {});
+  return Object.values(grouped).flatMap(group =>
+    group.length <= count
+      ? group
+      : group.sort(() => 0.5 - Math.random()).slice(0, count)
+  );
+};
 
-  let subscriptionFormat = 'base64';
-  if (!(userAgent.includes('null') || userAgent.includes('subconverter') || userAgent.includes('nekobox') || userAgent.includes('cf-workers-sub'))) {
-    if (userAgent.includes('sing-box') || userAgent.includes('singbox') || url.searchParams.has('sb') || url.searchParams.has('singbox')) {
-      subscriptionFormat = 'singbox';
-    } else if (userAgent.includes('surge') || url.searchParams.has('surge')) {
-      subscriptionFormat = 'surge';
-    } else if (userAgent.includes('quantumult') || url.searchParams.has('quanx')) {
-      subscriptionFormat = 'quanx';
-    } else if (userAgent.includes('loon') || url.searchParams.has('loon')) {
-      subscriptionFormat = 'loon';
-    } else if (userAgent.includes('clash') || userAgent.includes('meta') || userAgent.includes('mihomo') || url.searchParams.has('clash')) {
-      subscriptionFormat = 'clash';
+const selectFdip = (name, fdips) => {
+  if (!fdips.length) return [null, null];
+  const matches = fdips.filter(f => name.toLowerCase().includes(f.line.split('#')[1]?.trim().toLowerCase() || ''));
+  const pick = (matches.length ? matches : fdips)[Math.floor(Math.random() * (matches.length || fdips.length))];
+  return [pick.ip, pick.port];
+};
+
+const buildPath = (isTrojan, ip, port, vlessPrefix, trojanPrefix) =>
+  encodeURIComponent(`${isTrojan ? trojanPrefix : vlessPrefix}${ip}:${port}`);
+
+const generateNode = (tpl, ip, port, name, pathIp, pathPort, vp, tp) => {
+  const isTrojan = tpl.includes('trojan://');
+  const encodedName = encodeURIComponent(name || ip);
+  const path = buildPath(isTrojan, pathIp, pathPort, vp, tp);
+  return tpl
+    .replaceAll('[ip]', ip)
+    .replaceAll('[port]', port)
+    .replaceAll('[path]', path)
+    .replaceAll('[name]', encodedName);
+};
+
+const processNodes = (lines, tpl, opt) => {
+  if (!lines?.length) return [];
+  return lines.map(({ ip, port, name }) => {
+    let [pathIp, pathPort] = [ip, port];
+    if (opt.useForced) [pathIp, pathPort] = [opt.fdipIp, opt.fdipPort];
+    else if (opt.useAll || !opt.isUni) {
+      const [fdipIp, fdipPort] = selectFdip(name, opt.validFDIP);
+      if (fdipIp) [pathIp, pathPort] = [fdipIp, fdipPort];
     }
-  }
-  if (url.searchParams.has('b64') || url.searchParams.has('base64')) subscriptionFormat = 'base64';
+    return generateNode(tpl, ip, port, name, pathIp, pathPort, opt.vp, opt.tp);
+  });
+};
 
-  const lines = req_data.split('\n').filter(l => l.trim());
-  const result = [...new Set(lines)].join('\n');
+// ===== Worker 主体 =====
+export default {
+  async fetch(req, env) {
+    try {
+      const url = new URL(req.url);
+      const sp = url.searchParams;
 
-  let base64Data;
-  try {
-    base64Data = btoa(result);
-  } catch {
-    base64Data = encodeBase64(result);
-  }
+      const useTrojan = sp.get('trojan') === '1';
+      const dyn = {
+        uuid: sp.get('uuid') || CONFIG.UUID,
+        mima: sp.get('mima') || CONFIG.MIMA,
+        hostV: sp.get('hostV') || CONFIG.HOST_V,
+        hostT: sp.get('hostT') || CONFIG.HOST_T,
+        vp: sp.get('vlessPrefix') || CONFIG.VLESS_PREFIX,
+        tp: sp.get('trojanPrefix') || CONFIG.TROJAN_PREFIX,
+      };
 
-  const responseHeaders = {
-    'content-type': 'text/plain; charset=utf-8',
-    'Profile-Update-Interval': `${SUBUpdateTime}`,
-    'Profile-web-page-url': url.href.split('?')[0],
-  };
-  if (!userAgent.includes('mozilla')) {
-    responseHeaders['Content-Disposition'] = `attachment; filename*=utf-8''${encodeURIComponent(FileName)}`;
-  }
+      const parseCount = (k, d) => {
+        const v = sp.get(k);
+        if (!v) return d;
+        if (v === '0') return 0;
+        if (v.toLowerCase() === 'all') return 'all';
+        const n = parseInt(v, 10);
+        return isNaN(n) ? d : n;
+      };
+      const uniCount = parseCount('uni_count', CONFIG.UNI_COUNT);
+      const diffCount = parseCount('diff_count', CONFIG.DIFF_COUNT);
 
-  if (subscriptionFormat === 'base64') return new Response(base64Data, { headers: responseHeaders });
+      const tpl = useTrojan
+        ? `trojan://${dyn.mima}@[ip]:[port]?security=tls&sni=${dyn.hostT}&fp=chrome&type=ws&host=${dyn.hostT}&path=[path]#[name]`
+        : `vless://${dyn.uuid}@[ip]:[port]?path=[path]&security=tls&alpn=h3&encryption=none&host=${dyn.hostV}&fp=random&type=ws&sni=${dyn.hostV}#[name]`;
 
-  const target = subscriptionFormat === 'singbox' ? 'singbox' :
-                subscriptionFormat === 'surge' ? 'surge&ver=4' :
-                subscriptionFormat === 'quanx' ? 'quanx&udp=true' :
-                subscriptionFormat === 'loon' ? 'loon' : 'clash';
-
-  const subConverterUrl = `${subProtocol}://${subConverterHost}/sub?target=${target}&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(configFile)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
-
-  try {
-    const response = await fetch(subConverterUrl);
-    if (!response.ok) return new Response(base64Data, { headers: responseHeaders });
-    let content = await response.text();
-    if (subscriptionFormat === 'clash') content = clashFix(content);
-    return new Response(content, { headers: responseHeaders });
-  } catch {
-    return new Response(base64Data, { headers: responseHeaders });
-  }
-}
-
-// ===== Base64 辅助函数 =====
-function encodeBase64(data) {
-  const binary = new TextEncoder().encode(data);
-  let base64 = '';
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  for (let i = 0; i < binary.length; i += 3) {
-    const byte1 = binary[i];
-    const byte2 = binary[i + 1] || 0;
-    const byte3 = binary[i + 2] || 0;
-    base64 += chars[byte1 >> 2];
-    base64 += chars[((byte1 & 3) << 4) | (byte2 >> 4)];
-    base64 += chars[((byte2 & 15) << 2) | (byte3 >> 6)];
-    base64 += chars[byte3 & 63];
-  }
-  const padding = 3 - (binary.length % 3 || 3);
-  return base64.slice(0, base64.length - padding) + '=='.slice(0, padding);
-}
-
-// ===== Clash 修复函数 =====
-function clashFix(content) {
-  if (content.includes('wireguard') && !content.includes('remote-dns-resolve')) {
-    const lines = content.split(/\r?\n/);
-    let result = '';
-    for (const line of lines) {
-      if (line.includes('type: wireguard')) {
-        result += line.replace(/, mtu: 1280, udp: true/g, ', mtu: 1280, remote-dns-resolve: true, udp: true') + '\n';
-      } else {
-        result += line + '\n';
+      // FDIP 解析
+      const fdipParam = sp.get('fdip');
+      let opt = { vp: dyn.vp, tp: dyn.tp, validFDIP: [], isUni: false, useForced: false, useAll: false };
+      if (fdipParam === 'all') opt.useAll = true;
+      else if (fdipParam?.includes(':')) {
+        const [ip, port] = fdipParam.split(':');
+        const portNum = parseInt(port, 10);
+        if (ip && !isNaN(portNum)) {
+          opt.fdipIp = ip;
+          opt.fdipPort = String(portNum);
+          opt.useForced = true;
+        }
       }
+
+      const constFDIP = CONFIG.FDIP.map(l => ({ line: l, ...parseLine(l) })).filter(x => x.ip);
+      const kvFDIP = await fetchKvList(env, CONFIG.KV_FDIP_KEY);
+      opt.validFDIP = [...constFDIP, ...kvFDIP];
+
+      // 数据源
+      const uniLines = uniCount !== 0 ? await fetchLines(CONFIG.API_UNI) : [];
+      const diffLines = diffCount !== 0 ? await fetchLines(CONFIG.API_DIFF) : [];
+      const ipsLines = CONFIG.IPS.map(parseLine).filter(Boolean);
+
+      const uniNodes = processNodes(randomSampleByName(uniLines, uniCount), tpl, { ...opt, isUni: true });
+      const diffNodes = processNodes(randomSampleByName(diffLines, diffCount), tpl, opt);
+      const ipsNodes = processNodes(ipsLines, tpl, opt);
+
+      const allNodes = [...uniNodes, ...ipsNodes, ...diffNodes];
+      if (!allNodes.length) return new Response('无可用节点', { status: 404 });
+
+      if ((ipsNodes.length || diffNodes.length || (opt.useAll && uniNodes.length)) &&
+          !opt.useForced && !opt.validFDIP.length) {
+        return new Response('FDIP 无效或为空', { status: 500 });
+      }
+
+      return handleSubscription(req, allNodes.join('\n'), req.url, env);
+    } catch (e) {
+      err('运行错误', e);
+      return new Response('运行错误: ' + (e?.message || String(e)), { status: 500 });
     }
-    return result.trim();
+  },
+};
+
+// ===== 订阅转换 =====
+async function handleSubscription(req, data, subUrl, env) {
+  const ua = (req.headers.get('User-Agent') || '').toLowerCase();
+  const url = new URL(req.url);
+  const converter = env?.SUBAPI || CONFIG.SUB_API;
+  const cfg = env?.SUBCONFIG || CONFIG.SUB_CONFIG;
+  const proto = converter.startsWith('http://') ? 'http' : 'https';
+  const host = converter.replace(/^https?:\/\//, '');
+
+  const detectFmt = () => {
+    if (url.searchParams.has('b64') || url.searchParams.has('base64')) return 'base64';
+    if (/sing(-?box)?/.test(ua) || url.searchParams.has('singbox')) return 'singbox';
+    if (/surge/.test(ua) || url.searchParams.has('surge')) return 'surge';
+    if (/quantumult/.test(ua) || url.searchParams.has('quanx')) return 'quanx';
+    if (/loon/.test(ua) || url.searchParams.has('loon')) return 'loon';
+    if (/clash|meta|mihomo/.test(ua) || url.searchParams.has('clash')) return 'clash';
+    return 'base64';
+  };
+  const fmt = detectFmt();
+
+  const uniqLines = [...new Set(data.split('\n').filter(Boolean))].join('\n');
+  const base64 = encodeBase64(uniqLines);
+
+  const headers = {
+    'content-type': 'text/plain; charset=utf-8',
+    'Profile-Update-Interval': String(CONFIG.UPDATE_INTERVAL),
+    'Profile-web-page-url': url.origin + url.pathname,
+  };
+  if (!ua.includes('mozilla')) headers['Content-Disposition'] = `attachment; filename*=utf-8''${encodeURIComponent(CONFIG.FILE_NAME)}`;
+
+  if (fmt === 'base64') return new Response(base64, { headers });
+
+  const targetMap = { singbox: 'singbox', surge: 'surge&ver=4', quanx: 'quanx&udp=true', loon: 'loon', clash: 'clash' };
+  const target = targetMap[fmt] || 'clash';
+  const subUrlFull = `${proto}://${host}/sub?target=${target}&url=${encodeURIComponent(subUrl)}&insert=false&config=${encodeURIComponent(cfg)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
+
+  try {
+    const r = await fetch(subUrlFull);
+    if (!r.ok) return new Response(base64, { headers });
+    let c = await r.text();
+    if (fmt === 'clash') c = clashFix(c);
+    return new Response(c, { headers });
+  } catch {
+    return new Response(base64, { headers });
   }
-  return content;
+}
+
+// ===== Base64 与 Clash 修复 =====
+function encodeBase64(str) {
+  try {
+    return btoa(str);
+  } catch {
+    const b = new TextEncoder().encode(str);
+    const c = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    let out = '';
+    for (let i = 0; i < b.length; i += 3) {
+      const [a, d = 0, e = 0] = [b[i], b[i + 1], b[i + 2]];
+      out += c[a >> 2] + c[((a & 3) << 4) | (d >> 4)] + c[((d & 15) << 2) | (e >> 6)] + c[e & 63];
+    }
+    const pad = 3 - (b.length % 3 || 3);
+    return out.slice(0, out.length - pad) + '=='.slice(0, pad);
+  }
+}
+
+function clashFix(content) {
+  if (!content.includes('wireguard')) return content;
+  return content
+    .split(/\r?\n/)
+    .map(line => line.includes('type: wireguard')
+      ? line.replace(/, mtu: 1280, udp: true/, ', mtu: 1280, remote-dns-resolve: true, udp: true')
+      : line)
+    .join('\n')
+    .trim();
 }
