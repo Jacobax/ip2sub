@@ -71,11 +71,11 @@ https://example.workers.dev/?target=clash&uni_count=5&diff_count=3
 ## 📦 部署步骤  
 
 1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)。  
-2. 创建新 Worker 并粘贴 `_worker.js` 全部代码。  
+2. 创建新 `Pages` 并压缩或文件夹上传 `_worker.js`。  
 3. 在 **Settings → Variables → Environment Variables** 中配置所需变量。  
-4. 若使用 KV：  
-   - 在 **Workers KV** 创建命名空间 `UUID_CACHE`。  
-   - 绑定至 Worker 环境。  
+4. 若使用 KV 反代IP源：  
+   - 在 **Workers KV** 创建命名空间，名称随意。  
+   - 绑定变量名为`KV`至 Worker 环境。  
 5. 点击 **Deploy** 发布。  
 
 ---
